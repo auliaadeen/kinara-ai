@@ -1,0 +1,6 @@
+streamlit
+google-genai
+firebase-admin
+pydantic
+python-dotenv
+pytest
