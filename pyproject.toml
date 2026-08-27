@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+# Repo root on sys.path for every pytest run, regardless of cwd, without
+# touching the PYTHONPATH env var or installing the project as a package.
+pythonpath = ["."]

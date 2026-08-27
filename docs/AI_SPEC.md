@@ -8,7 +8,7 @@ Default model should be configurable through environment variables.
 
 Example:
 
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.6-flash
 
 Do not hard-code model selection throughout the codebase.
 

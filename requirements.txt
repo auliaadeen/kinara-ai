@@ -3,4 +3,5 @@ google-genai
 firebase-admin
 pydantic
 python-dotenv
+requests
 pytest

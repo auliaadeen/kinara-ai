@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Claude Code local skill/tooling artifacts (not app code)
+.agents/
+.claude/
