@@ -1,6 +1,6 @@
 # Kinara AI — Architecture
 
-Version: 3.0
+Version: 3.1
 
 ## 1. Architecture Principle
 
@@ -41,24 +41,31 @@ Cloud Run
 
 ## 3. Important Boundary
 
-Gemini is NOT the system of record.
+Gemini is NOT the system of record, and NOT the decision-maker for
+anything adaptive. It generates worksheet content only. This is an
+explicit, deliberate boundary, not an accident of the current
+implementation — see AI_SPEC.md §0 for the full statement and rationale.
 
 Firestore is the source of truth for:
 
 - user
 - child
 - session
-- learning memory
-- learning path
+- learning memory (including conceptHistory — DATA_MODEL.md)
+- learning path (Self-Learner — deferred, unused in this MVP)
 
 Python is the source of truth for:
 
 - score
+- Grade (derived from score, not stored — FIRESTORE_SCHEMA.md)
 - XP
-- mastery calculation
-- adaptive rules
+- Kinara Level (derived from XP, not stored — FIRESTORE_SCHEMA.md)
+- streak / Strike Status (derived from streak + lastSessionAt, not stored)
+- mastery calculation (recency-weighted over conceptHistory)
+- adaptive rules — including the "Recommended Next" decision itself,
+  not just the inputs to it
 
-Gemini is the source of generated learning content.
+Gemini is the source of generated learning content only.
 
 ## 4. Adaptive Flow
 

@@ -1,13 +1,15 @@
 """Parent dashboard (UI_SPEC.md, FSD.md #3)."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import streamlit as st
 
 from src.config import Settings
 from src.models.common import DIFFICULTY_ORDER
-from src.services import adaptive_engine, session_service
+from src.services import adaptive_engine, exam_history, gamification
 from src.services.firestore_service import FirestoreService, FirestoreUnavailableError
-from src.services.ai_engine import AIGenerationError
+from src.ui.session_launch import launch_session
 
 
 def _create_child_form(fs: FirestoreService) -> None:
@@ -47,23 +49,8 @@ def _generate_form(settings: Settings, fs: FirestoreService, child_id: str, defa
             st.error("Topic is required.")
             return
         override = None if difficulty == "(use recommended)" else difficulty
-        with st.spinner("Kinara is preparing the activity..."):
-            try:
-                session = session_service.generate_learning_experience(
-                    settings, fs, child_id, topic.strip(), override
-                )
-            except session_service.ChildNotFoundError as exc:
-                st.error(str(exc))
-                return
-            except FirestoreUnavailableError as exc:
-                st.error(str(exc))
-                return
-            except AIGenerationError as exc:
-                st.error(str(exc))
-                return
-        st.session_state.current_session = session
-        st.session_state.view = "session"
-        st.rerun()
+        if launch_session(settings, fs, child_id, topic.strip(), override):
+            st.rerun()
 
 
 def render_dashboard(settings: Settings, db) -> None:
@@ -109,12 +96,17 @@ def render_dashboard(settings: Settings, db) -> None:
 
     st.caption(f"{child.educational_level}")
 
-    col1, col2, col3, col4 = st.columns(4)
+    level_number, level_name = gamification.compute_level(memory.total_xp)
+    status = gamification.strike_status(memory.streak, memory.last_session_at, datetime.now(timezone.utc))
+
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("XP", memory.total_xp)
-    col2.metric("Streak", memory.streak)
+    col2.metric("Kinara Level", f"{level_number} — {level_name}")
+    col3.metric("Streak", memory.streak)
     avg_mastery = round(sum(memory.mastery_map.values()) / len(memory.mastery_map), 1) if memory.mastery_map else 0
-    col3.metric("Mastery", f"{avg_mastery}%")
-    col4.metric("Trend", memory.learning_trend)
+    col4.metric("Mastery", f"{avg_mastery}%")
+    col5.metric("Trend", memory.learning_trend)
+    st.caption(status)
 
     st.markdown("## 🧠 What Kinara Remembers")
     r1, r2, r3 = st.columns(3)
@@ -140,8 +132,45 @@ def render_dashboard(settings: Settings, db) -> None:
         st.write(f"**Reason:** {rec.reason}")
         default_topic = rec.topic
         if st.button("Continue Learning"):
-            pass  # form below is already pre-filled; explicit button just anchors intent
+            # Reuses this already-computed recommendation (rec.topic/
+            # rec.difficulty) directly — no second recommendation, no
+            # extra Gemini call for the decision itself (UI-002, AI_SPEC.md §0).
+            if launch_session(settings, fs, child_id, rec.topic, rec.difficulty):
+                st.rerun()
     else:
         st.write("No learning history yet — generate the first activity below.")
 
     _generate_form(settings, fs, child_id, default_topic, default_difficulty)
+
+    _exam_history_section(fs, child_id)
+
+
+def _exam_history_section(fs: FirestoreService, child_id: str) -> None:
+    """HIST-001. Additive section — doesn't change anything above it."""
+    with st.expander("🗂️ Exam History", expanded=False):
+        try:
+            sessions = fs.list_session_history(child_id)
+        except FirestoreUnavailableError as exc:
+            st.error(str(exc))
+            return
+
+        if not sessions:
+            st.write("No completed sessions yet.")
+            return
+
+        rows = exam_history.build_history_rows(sessions)
+        st.dataframe(
+            [
+                {
+                    "Date": row.completed_at.strftime("%Y-%m-%d %H:%M") if row.completed_at else "—",
+                    "Topic": row.topic,
+                    "Score": f"{row.score:.0f}%",
+                    "Grade": f"{row.grade_letter} — {row.grade_label}",
+                    "Trend": row.trend_label,
+                    "XP earned": row.xp_earned,
+                    "Status": row.status,
+                }
+                for row in rows
+            ],
+            width="stretch",
+        )

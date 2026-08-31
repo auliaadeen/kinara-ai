@@ -1,24 +1,44 @@
-"""Gemini integration (AI_SPEC.md).
+"""AI generation facade (AI_SPEC.md).
 
-Gemini generates worksheet CONTENT only. It never scores, never touches
-Firestore, never decides XP or difficulty progression (AI_SPEC.md #5,
-ARCHITECTURE.md #3). Every response is JSON-mode + Pydantic validated
-(AI_SPEC.md #2); invalid output is retried once, then fails in a controlled
-way (AI_SPEC.md #8, AI-001/002/003).
+Public entry point the rest of Kinara calls (session_service.py, and
+AIGenerationError is also imported directly by src/ui/session_launch.py).
+Callers never need to know which AI provider actually generated the
+content, or whether a fallback happened (Multi-Provider AI Architecture —
+Step 1 extracted Gemini into its own provider module; Step 2 added the
+provider factory; Step 3B, here, adds a single controlled fallback
+attempt). Gemini is still the default; OpenAI is only ever used as a
+configured fallback, never automatically preferred or substituted.
+
+Whichever provider ends up answering generates worksheet CONTENT only. It
+never scores, never touches Firestore, never decides XP or difficulty
+progression (AI_SPEC.md #5, ARCHITECTURE.md #3) — and neither does this
+module: generate_worksheet returns exactly one WorksheetResponse or
+raises AIGenerationError, nothing else, regardless of which provider (or
+how many attempts) it took to get there. Persistence stays entirely
+session_service.py's job, called exactly once by its caller either way.
+Every response is JSON-mode + Pydantic validated (AI_SPEC.md #2); invalid
+output is retried once *by the provider itself*, then fails in a
+controlled way (AI_SPEC.md #8, AI-001/002/003) — that retry behavior is
+unchanged and is not where fallback happens.
 """
 from __future__ import annotations
 
-import json
-
-from google import genai
-from google.genai import types
-from pydantic import ValidationError
+import logging
 
 from src.config import Settings
 from src.models.child import Child
 from src.models.learning_memory import LearningMemory
 from src.models.ai_schemas import WorksheetResponse
 from src.services.adaptive_engine import GenerationContext
+from src.services.ai_providers.errors import (
+    AIInvalidResponseError,
+    AIProviderError,
+    AIRateLimitError,
+    AITransientProviderError,
+)
+from src.services.ai_providers.factory import get_provider
+
+logger = logging.getLogger(__name__)
 
 SAFETY_INSTRUCTION = (
     "You generate short educational worksheets for children and self-learners. "
@@ -28,15 +48,23 @@ SAFETY_INSTRUCTION = (
     "supports it. Never invent learning history that was not given to you."
 )
 
-MAX_ATTEMPTS = 2
+# Static, safe user-facing messages only — never built from a raw provider
+# exception, so an error payload (which can mention quota metrics, project
+# identifiers, etc.) never reaches the UI. Provider-neutral: written about
+# "Kinara's AI service", not any specific provider by name.
+RATE_LIMIT_MESSAGE = "Kinara's AI service is temporarily rate-limited. Please try again later."
+GENERIC_FAILURE_MESSAGE = "Kinara could not reach the AI service. Please try again."
+INVALID_RESPONSE_MESSAGE = (
+    "Kinara's AI service returned an unusable response twice in a row. "
+    "Please try again in a moment."
+)
 
 
 class AIGenerationError(RuntimeError):
-    """Raised when Gemini fails or returns unusable output after retry (FSD.md #12)."""
-
-
-def _client(settings: Settings) -> genai.Client:
-    return genai.Client(api_key=settings.gemini_api_key)
+    """Raised when the AI provider fails or returns unusable output after
+    retry (FSD.md #12). Public — session_service.py and the UI catch this
+    specifically; they never see provider-neutral errors or provider SDK
+    exceptions directly."""
 
 
 def build_worksheet_prompt(
@@ -89,34 +117,86 @@ def build_worksheet_prompt(
     return "\n".join(lines)
 
 
+def _is_fallback_eligible(exc: AIProviderError) -> bool:
+    """Only these are worth trying a different provider for. Everything
+    else (authentication, configuration, or an invalid response even
+    after the provider's own retry) fails immediately: a different
+    provider wouldn't fix a bad key or a bad request, and silently
+    masking those would hide a real problem instead of surfacing it."""
+    return isinstance(exc, (AIRateLimitError, AITransientProviderError))
+
+
+def _failure_reason_label(exc: AIProviderError) -> str:
+    """Safe, content-free label for logs — derived only from the
+    exception's type, never its message (which may carry provider-
+    specific detail)."""
+    if isinstance(exc, AIRateLimitError):
+        return "rate limit"
+    if isinstance(exc, AITransientProviderError):
+        return "transient failure"
+    return "provider error"
+
+
+def _safe_message_for(exc: AIProviderError) -> str:
+    """Map any provider-neutral error to the existing safe user-facing
+    message. Never built from the raw exception — static strings only,
+    so nothing provider-specific (quota metrics, project ids, request
+    detail) can reach the UI."""
+    if isinstance(exc, AIRateLimitError):
+        return RATE_LIMIT_MESSAGE
+    if isinstance(exc, AIInvalidResponseError):
+        return INVALID_RESPONSE_MESSAGE
+    return GENERIC_FAILURE_MESSAGE
+
+
 def generate_worksheet(settings: Settings, prompt: str) -> WorksheetResponse:
-    client = _client(settings)
-    last_error: Exception | None = None
+    """Primary provider first (default: Gemini, via the factory). On
+    AIRateLimitError or a transient provider failure, try the configured
+    fallback provider exactly once — never on authentication,
+    configuration, or invalid-response failures, and never more than
+    primary -> fallback -> final failure (no loops back to primary).
+    session_service.py, adaptive_engine.py, and the UI never change to
+    add this — they only ever call this one function and only ever see
+    a WorksheetResponse or AIGenerationError, exactly as before."""
+    try:
+        primary = get_provider(settings)
+    except AIProviderError as exc:
+        raise AIGenerationError(_safe_message_for(exc)) from exc
 
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        try:
-            response = client.models.generate_content(
-                model=settings.gemini_model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=SAFETY_INSTRUCTION,
-                    response_mime_type="application/json",
-                    response_schema=WorksheetResponse,
-                ),
+    # Provider identity only — never the prompt (may contain learner
+    # context) and never any credential/setting value.
+    logger.info("AI generation using provider=%s", primary.name)
+
+    try:
+        return primary.generate_worksheet(prompt, SAFETY_INSTRUCTION)
+    except AIProviderError as primary_exc:
+        if not _is_fallback_eligible(primary_exc):
+            raise AIGenerationError(_safe_message_for(primary_exc)) from primary_exc
+
+        fallback_name = (settings.ai_fallback_provider or "none").strip().lower()
+        reason = _failure_reason_label(primary_exc)
+
+        if not fallback_name or fallback_name == "none" or fallback_name == primary.name:
+            logger.info(
+                "Primary provider=%s failed (%s); no eligible fallback configured",
+                primary.name,
+                reason,
             )
-        except Exception as exc:  # network / API failure — no point retrying immediately
-            raise AIGenerationError(
-                "Kinara could not reach the AI service. Please try again."
-            ) from exc
+            raise AIGenerationError(_safe_message_for(primary_exc)) from primary_exc
 
+        logger.info(
+            "Primary provider=%s failed (%s); trying fallback=%s", primary.name, reason, fallback_name
+        )
         try:
-            data = json.loads(response.text)
-            return WorksheetResponse.model_validate(data)
-        except (json.JSONDecodeError, ValidationError) as exc:
-            last_error = exc
-            continue
+            fallback = get_provider(settings, provider_name=fallback_name)
+            result = fallback.generate_worksheet(prompt, SAFETY_INSTRUCTION)
+        except AIProviderError as fallback_exc:
+            logger.warning(
+                "Fallback provider=%s failed (%s)",
+                fallback_name,
+                _failure_reason_label(fallback_exc),
+            )
+            raise AIGenerationError(_safe_message_for(fallback_exc)) from fallback_exc
 
-    raise AIGenerationError(
-        "Kinara's AI service returned an unusable response twice in a row. "
-        "Please try again in a moment."
-    ) from last_error
+        logger.info("Fallback provider=%s succeeded", fallback_name)
+        return result

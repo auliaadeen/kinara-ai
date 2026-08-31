@@ -12,11 +12,7 @@ Kinara AI is an adaptive learning companion powered by:
 
 ## Core Loop
 
-Learn
-→ Assess
-→ Remember
-→ Adapt
-→ Next Experience
+Learn → Test → Score → Remember → Analyze → Adapt → Recommended Next → Learn Again
 
 ## Local Development
 
@@ -40,11 +36,13 @@ docs/PRD.md
 docs/FSD.md
 docs/ARCHITECTURE.md
 docs/DATA_MODEL.md
+docs/FIRESTORE_SCHEMA.md
 docs/AI_SPEC.md
 docs/UI_SPEC.md
 docs/SECURITY.md
 docs/DEPLOYMENT.md
 docs/ACCEPTANCE_TESTS.md
+docs/TEST_STRATEGY.md
 docs/AI_RULES.md
 
 ## Development Philosophy
@@ -55,7 +53,7 @@ The most important feature is not AI content generation.
 
 The most important feature is the learning memory loop:
 
-Learn → Assess → Remember → Adapt → Learn Again.
+Learn → Test → Score → Remember → Analyze → Adapt → Recommended Next → Learn Again.
 
 Kinara AI
 Copyright (c) 2026 Diana Aulia

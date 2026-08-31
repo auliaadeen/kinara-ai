@@ -1,6 +1,6 @@
 # Kinara AI — AI Coding Rules
 
-Version: 3.0
+Version: 3.1
 Status: LOCKED
 
 ## RULE 1 — Read Before Coding
@@ -11,10 +11,12 @@ docs/PRD.md
 docs/FSD.md
 docs/ARCHITECTURE.md
 docs/DATA_MODEL.md
+docs/FIRESTORE_SCHEMA.md
 docs/AI_SPEC.md
 docs/UI_SPEC.md
 docs/SECURITY.md
 docs/ACCEPTANCE_TESTS.md
+docs/TEST_STRATEGY.md
 
 ## RULE 2 — Product Principle
 
@@ -47,6 +49,15 @@ Firestore
 Gemini
 
 Do not fake these integrations in the production implementation.
+
+Gemini remains the primary/default AI provider (RULE 2 unchanged — this
+is the required-use list, not a cap on the architecture). OpenAI is a
+genuinely-implemented fallback provider only, selected exclusively when
+Gemini is rate-limited or transiently unavailable (Multi-Provider AI
+Architecture — see AI_SPEC.md §0, ARCHITECTURE.md §3). Do not present
+OpenAI as a Google Cloud requirement, and do not present the fallback as
+Gemini being "multi-agent" — it is deterministic Python provider
+selection over two independent models, not agent orchestration.
 
 ## RULE 5 — Source of Truth
 
@@ -109,11 +120,17 @@ P0 Learning Memory
 P0 Adaptive Engine
 P0 Demo Flow
 
-P1 Gamification
-P1 Analytics
+P0.1 (this MVP round's additions — DEMO-001 doesn't fully pass without them):
+P0.1 Grade (GRADE-001)
+P0.1 Kinara Level (LEVEL-001)
+P0.1 Continue Learning fix (UI-002)
+P0.1 Strike Status badge (STREAK-001)
+P0.1 Exam History (HIST-001)
+P0.1 auth_service.py test coverage (AUTH-001 gap)
+
 P1 UI polish
 
-P2 Everything else.
+P2 Everything else. Self-Learner stays out of scope entirely (not P1/P2 — deferred, see FSD.md §10).
 
 ## RULE 11 — Do Not Expand Scope
 

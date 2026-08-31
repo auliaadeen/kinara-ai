@@ -155,3 +155,123 @@ def derive_weak_strong(mastery_map: dict[str, float]) -> tuple[list[str], list[s
     weak = sorted([c for c, v in mastery_map.items() if concept_state(v) == "weak"])
     strong = sorted([c for c, v in mastery_map.items() if concept_state(v) == "strong"])
     return weak, strong
+
+
+# --- Grade (GRADE-001) ------------------------------------------------------
+
+# (min score inclusive, letter, label) — checked highest-first. Reuses the
+# adaptive engine's own 60/80 breakpoints (SCORE_LOW/SCORE_HIGH), so Grade
+# is a label over the same evidence, not a second threshold scheme.
+GRADE_BANDS: list[tuple[float, str, str]] = [
+    (80.0, "A", "Excellent"),
+    (60.0, "B", "Good"),
+    (40.0, "C", "Fair"),
+    (0.0, "D", "Needs Improvement"),
+]
+
+
+def compute_grade(score: float) -> tuple[str, str]:
+    """FSD.md #5.1 / GRADE-001. Deterministic, score-only — never assigned
+    by Gemini (AI_SPEC.md #5). Returns (letter, label), e.g. ("A", "Excellent")."""
+    for threshold, letter, label in GRADE_BANDS:
+        if score >= threshold:
+            return letter, label
+    return GRADE_BANDS[-1][1], GRADE_BANDS[-1][2]  # unreachable (0.0 floor), kept for safety
+
+
+# --- Kinara Level (LEVEL-001) ------------------------------------------------
+
+# (min cumulative XP inclusive, level number, name) — checked highest-first.
+LEVEL_THRESHOLDS: list[tuple[int, int, str]] = [
+    (500, 5, "Master"),
+    (300, 4, "Scholar"),
+    (150, 3, "Achiever"),
+    (50, 2, "Learner"),
+    (0, 1, "Starter"),
+]
+
+
+def compute_level(total_xp: int) -> tuple[int, str]:
+    """FSD.md #11.2 / LEVEL-001. Highest threshold <= total_xp. Derived at
+    read/display time only — never persisted (FIRESTORE_SCHEMA.md).
+    Distinct from educationalLevel (school grade, a child-profile input,
+    not derived). Returns (level_number, level_name)."""
+    for threshold, level, name in LEVEL_THRESHOLDS:
+        if total_xp >= threshold:
+            return level, name
+    return LEVEL_THRESHOLDS[-1][1], LEVEL_THRESHOLDS[-1][2]  # unreachable (0 floor)
+
+
+# --- Strike Status (STREAK-001) ----------------------------------------------
+
+
+def strike_status(streak: int, last_session_at: datetime | None, now: datetime) -> str:
+    """FSD.md #11.3 / STREAK-001. Derived at display time only — no new
+    persisted field. "Today" is now's calendar date; "done today" means
+    last_session_at falls on that same calendar date. `streak` itself is
+    unchanged, existing compute_streak output."""
+    if streak <= 0:
+        return "Start your streak"
+    done_today = last_session_at is not None and last_session_at.date() == now.date()
+    if done_today:
+        return "🔥 Done today"
+    return "⏳ Streak alive — practice today"
+
+
+# --- Exam History support (HIST-001) -----------------------------------------
+
+
+def session_result_trend(previous_score: float | None, score: float) -> str:
+    """Per-history-row trend label: this session's score vs. the
+    immediately preceding session's score. Distinct from compute_trend,
+    which compares against the mean of several recent scores for the
+    adaptive-engine decision — this answers a simpler question for a
+    history table: did this one go up or down from the last one."""
+    if previous_score is None:
+        return "—"
+    if score > previous_score:
+        return "Improved"
+    if score < previous_score:
+        return "Declined"
+    return "Same"
+
+
+def reconstruct_session_xp_history(
+    sessions_oldest_first: list[tuple[float, datetime]]
+) -> list[int]:
+    """HIST-001: XP was never stored per-session (only as a cumulative
+    running total on Learning Memory), but it was always a deterministic
+    function of (score, streak-increment, trend-improvement) at submit
+    time — and those are themselves deterministic functions of prior
+    sessions' scores/timestamps. So it can be exactly reconstructed by
+    replaying compute_streak/compute_trend/compute_xp forward over the
+    ordered history, using only score + completedAt already stored on
+    each session. No new Firestore field required (FIRESTORE_SCHEMA.md).
+
+    sessions_oldest_first: (score, completed_at) pairs, oldest first.
+    Returns XP per session, same order.
+    """
+    # Deferred import: avoids a module-level circular import (session_service
+    # already imports this module). Keeps the recent-scores window in one
+    # place rather than duplicating the literal value here.
+    from src.services.session_service import RECENT_SESSIONS_FOR_CONTEXT as _WINDOW
+
+    xp_per_session: list[int] = []
+    streak = 0
+    last_session_at: datetime | None = None
+    recent_scores: list[float] = []
+
+    for score, completed_at in sessions_oldest_first:
+        new_streak, streak_incremented = compute_streak(streak, last_session_at, completed_at)
+        trend = compute_trend(recent_scores, score)
+        improved = trend == "improving"
+        xp, _ = compute_xp(
+            completed=True, score=score, improved=improved, streak_incremented=streak_incremented
+        )
+        xp_per_session.append(xp)
+
+        streak = new_streak
+        last_session_at = completed_at
+        recent_scores = ([score] + recent_scores)[:_WINDOW]
+
+    return xp_per_session

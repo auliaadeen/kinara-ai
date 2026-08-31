@@ -153,14 +153,18 @@ class FirestoreService:
             logger.exception("Firestore op failed (%s): %s", "Could not save your results.", exc)
             raise FirestoreUnavailableError("Could not save your results.") from exc
 
-    def list_recent_sessions(self, child_id: str, limit: int = 3) -> list[LearningSession]:
+    def _fetch_completed_sessions(self, child_id: str, limit: int, error_message: str) -> list[LearningSession]:
         """Combining an equality filter (completed == True) with order_by on a
         different field (completedAt) needs a Firestore composite index that
         doesn't exist by default — Firestore raises FAILED_PRECONDITION for
         that query shape even against an empty collection, before any data
         is inspected. Ordering by a single field only avoids that entirely
         (Firestore auto-indexes every field on its own), and the
-        completed-only filtering + limit happen here in Python instead."""
+        completed-only filtering + limit happen here in Python instead.
+
+        Shared by list_recent_sessions (small window, adaptive context) and
+        list_session_history (full history, HIST-001) — same query shape,
+        different purpose/limit."""
         try:
             query = (
                 self._child_ref(child_id)
@@ -170,6 +174,19 @@ class FirestoreService:
             docs = query.stream()
             sessions = [LearningSession.from_firestore(d.to_dict()) for d in docs]
         except Exception as exc:
-            logger.exception("Firestore op failed (%s): %s", "Could not load recent sessions.", exc)
-            raise FirestoreUnavailableError("Could not load recent sessions.") from exc
+            logger.exception("Firestore op failed (%s): %s", error_message, exc)
+            raise FirestoreUnavailableError(error_message) from exc
         return [s for s in sessions if s.completed][:limit]
+
+    def list_recent_sessions(self, child_id: str, limit: int = 3) -> list[LearningSession]:
+        """Small recent window used to build adaptive context for Gemini
+        prompts and trend/XP calculations (session_service.py)."""
+        return self._fetch_completed_sessions(child_id, limit, "Could not load recent sessions.")
+
+    def list_session_history(self, child_id: str, limit: int = 100) -> list[LearningSession]:
+        """HIST-001: full completed-session history for a child, newest
+        first — for the Exam History view. Same underlying data as
+        list_recent_sessions (no separate collection), just not capped to
+        a small adaptive-context window. Always scoped to this instance's
+        uid, same as every other method here (SECURITY-001 / AUTH-002)."""
+        return self._fetch_completed_sessions(child_id, limit, "Could not load exam history.")

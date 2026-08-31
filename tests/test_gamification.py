@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from src.services import gamification
 
 
@@ -175,3 +177,142 @@ def test_derive_weak_strong():
     weak, strong = gamification.derive_weak_strong(mastery)
     assert weak == ["a"]
     assert strong == ["c"]
+
+
+# --- GRADE-001 ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "score,expected_letter",
+    [
+        (100, "A"),
+        (80, "A"),
+        (79, "B"),
+        (60, "B"),
+        (59, "C"),
+        (40, "C"),
+        (39, "D"),
+        (0, "D"),
+    ],
+)
+def test_compute_grade_boundaries(score, expected_letter):
+    letter, _label = gamification.compute_grade(score)
+    assert letter == expected_letter
+
+
+def test_compute_grade_returns_label_too():
+    assert gamification.compute_grade(100) == ("A", "Excellent")
+    assert gamification.compute_grade(0) == ("D", "Needs Improvement")
+
+
+def test_compute_grade_never_calls_gemini():
+    # Regression guard for "Gemini must not assign a Grade" (AI_SPEC.md §5):
+    # this module has no import of ai_engine/genai at all.
+    import inspect
+
+    source = inspect.getsource(gamification)
+    assert "genai" not in source and "ai_engine" not in source
+
+
+# --- LEVEL-001 -----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "total_xp,expected_level,expected_name",
+    [
+        (0, 1, "Starter"),
+        (49, 1, "Starter"),
+        (50, 2, "Learner"),
+        (149, 2, "Learner"),
+        (150, 3, "Achiever"),
+        (299, 3, "Achiever"),
+        (300, 4, "Scholar"),
+        (499, 4, "Scholar"),
+        (500, 5, "Master"),
+        (10_000, 5, "Master"),
+    ],
+)
+def test_compute_level_boundaries(total_xp, expected_level, expected_name):
+    level, name = gamification.compute_level(total_xp)
+    assert (level, name) == (expected_level, expected_name)
+
+
+# --- STREAK-001 ----------------------------------------------------------------
+
+
+def test_strike_status_zero_streak():
+    now = datetime(2026, 8, 27, 10, tzinfo=timezone.utc)
+    assert gamification.strike_status(0, None, now) == "Start your streak"
+
+
+def test_strike_status_positive_streak_completed_today():
+    now = datetime(2026, 8, 27, 10, tzinfo=timezone.utc)
+    last = datetime(2026, 8, 27, 8, tzinfo=timezone.utc)
+    assert gamification.strike_status(3, last, now) == "🔥 Done today"
+
+
+def test_strike_status_positive_streak_not_completed_today():
+    now = datetime(2026, 8, 27, 10, tzinfo=timezone.utc)
+    last = datetime(2026, 8, 26, 8, tzinfo=timezone.utc)  # yesterday
+    assert gamification.strike_status(3, last, now) == "⏳ Streak alive — practice today"
+
+
+def test_strike_status_date_boundary_just_after_midnight():
+    # last session was 23:59 yesterday, now is 00:01 today -- still "not
+    # completed today" even though less than 3 minutes have passed
+    now = datetime(2026, 8, 27, 0, 1, tzinfo=timezone.utc)
+    last = datetime(2026, 8, 26, 23, 59, tzinfo=timezone.utc)
+    assert gamification.strike_status(2, last, now) == "⏳ Streak alive — practice today"
+
+
+def test_strike_status_zero_streak_ignores_last_session_at():
+    # defensive: streak==0 always wins, even if last_session_at is oddly set
+    now = datetime(2026, 8, 27, 10, tzinfo=timezone.utc)
+    assert gamification.strike_status(0, now, now) == "Start your streak"
+
+
+# --- HIST-001: session_result_trend ---------------------------------------------
+
+
+def test_session_result_trend_no_previous():
+    assert gamification.session_result_trend(None, 80) == "—"
+
+
+def test_session_result_trend_improved():
+    assert gamification.session_result_trend(60, 80) == "Improved"
+
+
+def test_session_result_trend_declined():
+    assert gamification.session_result_trend(80, 60) == "Declined"
+
+
+def test_session_result_trend_same():
+    assert gamification.session_result_trend(70, 70) == "Same"
+
+
+# --- HIST-001: reconstruct_session_xp_history -----------------------------------
+
+
+def test_reconstruct_session_xp_history_matches_live_computation():
+    """The replayed XP must exactly match what compute_xp would have
+    produced live, for a simple two-session sequence."""
+    d1 = datetime(2026, 8, 25, 9, tzinfo=timezone.utc)
+    d2 = datetime(2026, 8, 26, 9, tzinfo=timezone.utc)  # consecutive day -> streak increments
+
+    xp_series = gamification.reconstruct_session_xp_history([(50.0, d1), (90.0, d2)])
+
+    # session 1: first ever -> streak_incremented=True, no recent_scores -> trend "stable" -> improved=False
+    expected_xp1, _ = gamification.compute_xp(
+        completed=True, score=50.0, improved=False, streak_incremented=True
+    )
+    # session 2: consecutive day -> streak_incremented=True; trend vs [50.0] -> "improving" -> improved=True
+    trend2 = gamification.compute_trend([50.0], 90.0)
+    expected_xp2, _ = gamification.compute_xp(
+        completed=True, score=90.0, improved=(trend2 == "improving"), streak_incremented=True
+    )
+
+    assert xp_series == [expected_xp1, expected_xp2]
+
+
+def test_reconstruct_session_xp_history_empty():
+    assert gamification.reconstruct_session_xp_history([]) == []

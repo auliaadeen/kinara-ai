@@ -1,0 +1,14 @@
+# Dockerfile does `COPY . .` — without this file, a `docker build` run
+# from a machine that has a local .env (real secrets) or a .venv would
+# bake both straight into the image. SECURITY.md: never bake secrets
+# into the Docker image.
+.env
+.git
+.gitignore
+.venv
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.vscode/
+.idea/
