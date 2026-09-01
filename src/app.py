@@ -22,11 +22,20 @@ import streamlit as st
 
 from src.config import ConfigError, load_settings
 from src.services.firebase_bootstrap import get_firestore_client
+from src.ui import theme
 from src.ui.auth_view import render_auth
 from src.ui.dashboard_view import render_dashboard
 from src.ui.session_view import render_results, render_session
 
-st.set_page_config(page_title="Kinara AI", page_icon="🧠", layout="centered")
+st.set_page_config(page_title="Kinara AI", page_icon=":material/psychology:", layout="centered")
+
+_SESSION_KEYS = ["uid", "email", "id_token", "role", "view", "selected_child_id", "current_session", "last_submit_result"]
+
+
+def _logout() -> None:
+    for key in _SESSION_KEYS:
+        st.session_state.pop(key, None)
+    st.rerun()
 
 
 def main() -> None:
@@ -48,10 +57,14 @@ def main() -> None:
         return
 
     if "uid" not in st.session_state:
+        theme.inject()
         render_auth(settings, db)
         return
 
+    theme.inject()
     view = st.session_state.get("view", "dashboard")
+    theme.render_identity_sidebar(st.session_state.get("email"), view, _logout)
+
     if view == "session" and "current_session" in st.session_state:
         render_session(settings, db)
     elif view == "results" and "last_submit_result" in st.session_state:

@@ -1,0 +1,53 @@
+[theme]
+# Kinara AI — "calm, intelligent, warm, trustworthy adaptive learning
+# companion." Teal (trust/calm/focus) + warm amber accent (encouragement).
+# Structure/spacing/shadow/badge-triad pattern adapted from TailGrids
+# (github.com/TailGrids/tailgrids, MIT) — its blue/gray hue swapped for
+# Kinara's warm teal so it stays "calm/warm," not generic-SaaS-blue.
+# See src/ui/theme.py for the matching CSS tokens (kept in sync by hand).
+headingFont = "'Plus Jakarta Sans':https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700&display=swap"
+font = "'DM Sans':https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap"
+baseFontSize = 16
+baseRadius = "12px"
+buttonRadius = "12px"
+showWidgetBorder = true
+showSidebarBorder = true
+linkUnderline = false
+
+[theme.light]
+primaryColor = "#0F766E"
+# Soft warm-neutral page background; cards sit on secondaryBackgroundColor
+# (white) for the elevated white-card-on-tinted-page look TailGrids uses.
+backgroundColor = "#F6F4EF"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1C1917"
+linkColor = "#0F766E"
+borderColor = "#E7E2D6"
+# Semantic colors as soft-background/saturated-text/mid-icon triads
+# (TailGrids' badge-token pattern) so st.badge reads consistently.
+greenColor = "#16A34A"
+greenBackgroundColor = "#F0FDF4"
+greenTextColor = "#15803D"
+orangeColor = "#F59E0B"
+orangeBackgroundColor = "#FFFBEB"
+orangeTextColor = "#B45309"
+redColor = "#EF4444"
+redBackgroundColor = "#FEF2F2"
+redTextColor = "#B91C1C"
+blueColor = "#2563EB"
+grayColor = "#6B7280"
+grayBackgroundColor = "#F3F4F6"
+grayTextColor = "#374151"
+
+[theme.dark]
+primaryColor = "#0F766E"
+backgroundColor = "#14201E"
+secondaryBackgroundColor = "#1C2A27"
+textColor = "#F1EDE3"
+linkColor = "#5EEAD4"
+borderColor = "#2D3B37"
+greenColor = "#4ADE80"
+orangeColor = "#FBBF24"
+redColor = "#F87171"
+blueColor = "#60A5FA"
+grayColor = "#A8A196"

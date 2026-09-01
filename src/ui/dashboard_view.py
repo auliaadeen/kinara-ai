@@ -1,4 +1,10 @@
-"""Parent dashboard (UI_SPEC.md, FSD.md #3)."""
+"""Parent dashboard (UI_SPEC.md, FSD.md #3).
+
+BATCH 1 — frontend/UI/UX only. Every Firestore/adaptive-engine/
+gamification call below is unchanged from the previous implementation;
+only presentation (layout, wrapping containers, icons, copy casing) was
+touched. See src/ui/theme.py for the shared design system.
+"""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -9,16 +15,17 @@ from src.config import Settings
 from src.models.common import DIFFICULTY_ORDER
 from src.services import adaptive_engine, exam_history, gamification
 from src.services.firestore_service import FirestoreService, FirestoreUnavailableError
+from src.ui import theme
 from src.ui.session_launch import launch_session
 
 
 def _create_child_form(fs: FirestoreService) -> None:
-    with st.expander("+ Add a child", expanded=False):
+    with st.expander("Add a child", icon=":material/person_add:", expanded=False):
         with st.form("create_child_form"):
             name = st.text_input("Name")
             level = st.text_input("Educational level (e.g. Grade 2)")
             style = st.text_input("Preferred learning style (optional)")
-            submitted = st.form_submit_button("Create child")
+            submitted = st.form_submit_button("Create child", icon=":material/check:")
         if submitted:
             if not name.strip() or not level.strip():
                 st.error("Name and educational level are required.")
@@ -28,42 +35,105 @@ def _create_child_form(fs: FirestoreService) -> None:
             except FirestoreUnavailableError as exc:
                 st.error(str(exc))
             else:
-                st.success(f"{name} added.")
+                st.toast(f"{name} added.", icon=":material/celebration:")
                 st.rerun()
 
 
 def _generate_form(settings: Settings, fs: FirestoreService, child_id: str, default_topic: str, default_difficulty: str) -> None:
-    st.subheader("Generate Learning Experience")
-    with st.form("generate_form"):
-        topic = st.text_input("Topic", value=default_topic)
-        difficulty = st.selectbox(
-            "Difficulty (optional override)",
-            options=["(use recommended)"] + list(DIFFICULTY_ORDER),
-            index=(["(use recommended)"] + list(DIFFICULTY_ORDER)).index(default_difficulty)
-            if default_difficulty in DIFFICULTY_ORDER
-            else 0,
+    theme.section_title("edit_note", "Generate a learning activity")
+    with st.container(border=True):
+        with st.form("generate_form"):
+            topic = st.text_input("Topic", value=default_topic)
+            difficulty = st.selectbox(
+                "Difficulty (optional override)",
+                options=["(use recommended)"] + list(DIFFICULTY_ORDER),
+                index=(["(use recommended)"] + list(DIFFICULTY_ORDER)).index(default_difficulty)
+                if default_difficulty in DIFFICULTY_ORDER
+                else 0,
+            )
+            submitted = st.form_submit_button("Generate", icon=":material/auto_awesome:")
+        if submitted:
+            if not topic.strip():
+                st.error("Topic is required.")
+                return
+            override = None if difficulty == "(use recommended)" else difficulty
+            if launch_session(settings, fs, child_id, topic.strip(), override):
+                st.rerun()
+
+
+def _memory_section(memory) -> None:
+    theme.section_title("psychology", "What Kinara remembers")
+    with st.container(border=True):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.caption("Weak concepts")
+            if memory.weak_concepts:
+                with st.container(horizontal=True):
+                    for concept in memory.weak_concepts:
+                        st.badge(concept.replace("_", " "), icon=":material/trending_down:", color="orange")
+            else:
+                st.caption("None yet")
+        with col2:
+            st.caption("Strong concepts")
+            if memory.strong_concepts:
+                with st.container(horizontal=True):
+                    for concept in memory.strong_concepts:
+                        st.badge(concept.replace("_", " "), icon=":material/trending_up:", color="green")
+            else:
+                st.caption("None yet")
+        with col3:
+            st.caption("Recent topics")
+            if memory.recent_topics:
+                with st.container(horizontal=True):
+                    for topic in memory.recent_topics:
+                        st.badge(topic, icon=":material/history:", color="gray")
+            else:
+                st.caption("None yet")
+
+
+def _recommended_next_section(settings: Settings, fs: FirestoreService, child_id: str, memory) -> tuple[str, str]:
+    theme.section_title("auto_awesome", "Recommended next")
+    default_topic = ""
+    default_difficulty = memory.recommended_difficulty
+    if memory.has_history and memory.recent_topics:
+        rec = adaptive_engine.build_next_experience(
+            updated_memory=memory, last_topic=memory.recent_topics[0], repeated_weak_concept=None
         )
-        submitted = st.form_submit_button("Generate")
-    if submitted:
-        if not topic.strip():
-            st.error("Topic is required.")
-            return
-        override = None if difficulty == "(use recommended)" else difficulty
-        if launch_session(settings, fs, child_id, topic.strip(), override):
-            st.rerun()
+        with st.container(key=theme.CTA_KEY, border=True):
+            theme.cta_eyebrow("bolt", "Kinara's pick for today")
+            st.markdown(f"#### {rec.topic}")
+            st.caption(f"Difficulty: {rec.difficulty}")
+            st.write(rec.reason)
+            if st.button("Continue Learning", type="primary", icon=":material/play_arrow:", width="stretch"):
+                # Reuses this already-computed recommendation (rec.topic/
+                # rec.difficulty) directly — no second recommendation, no
+                # extra Gemini call for the decision itself (UI-002, AI_SPEC.md §0).
+                if launch_session(settings, fs, child_id, rec.topic, rec.difficulty):
+                    st.rerun()
+        default_topic = rec.topic
+    else:
+        with st.container(border=True):
+            st.write("No learning history yet — generate the first activity below.")
+    return default_topic, default_difficulty
+
+
+def _progress_section(memory) -> None:
+    theme.section_title("bar_chart", "Progress")
+    level_number, level_name = gamification.compute_level(memory.total_xp)
+    status = gamification.strike_status(memory.streak, memory.last_session_at, datetime.now(timezone.utc))
+
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("XP", memory.total_xp)
+    col2.metric("Kinara level", f"{level_number} — {level_name}")
+    col3.metric("Streak", memory.streak)
+    avg_mastery = round(sum(memory.mastery_map.values()) / len(memory.mastery_map), 1) if memory.mastery_map else 0
+    col4.metric("Mastery", f"{avg_mastery}%")
+    col5.metric("Trend", memory.learning_trend)
+    st.caption(status)
 
 
 def render_dashboard(settings: Settings, db) -> None:
     fs = FirestoreService(db, st.session_state.uid)
-
-    with st.sidebar:
-        st.write(f"Signed in as **{st.session_state.email}**")
-        if st.button("Log out"):
-            for key in ["uid", "email", "id_token", "role", "view", "selected_child_id", "current_session", "last_submit_result"]:
-                st.session_state.pop(key, None)
-            st.rerun()
-
-    st.title("Kinara AI")
 
     try:
         children = fs.list_children()
@@ -74,7 +144,15 @@ def render_dashboard(settings: Settings, db) -> None:
     _create_child_form(fs)
 
     if not children:
-        st.info("Create a child profile to get started.")
+        with st.container(border=True):
+            st.markdown(
+                "##### :material/family_restroom: Create a child profile to get started",
+                text_alignment="center",
+            )
+            st.caption(
+                "Kinara adapts every learning session to your child's pace once a profile exists.",
+                text_alignment="center",
+            )
         return
 
     names = {c.child_id: c.name for c in children}
@@ -94,60 +172,18 @@ def render_dashboard(settings: Settings, db) -> None:
         st.error(str(exc))
         return
 
-    st.caption(f"{child.educational_level}")
+    theme.hero("Kinara AI · Parent view", f"How {child.name} is doing", child.educational_level)
 
-    level_number, level_name = gamification.compute_level(memory.total_xp)
-    status = gamification.strike_status(memory.streak, memory.last_session_at, datetime.now(timezone.utc))
-
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("XP", memory.total_xp)
-    col2.metric("Kinara Level", f"{level_number} — {level_name}")
-    col3.metric("Streak", memory.streak)
-    avg_mastery = round(sum(memory.mastery_map.values()) / len(memory.mastery_map), 1) if memory.mastery_map else 0
-    col4.metric("Mastery", f"{avg_mastery}%")
-    col5.metric("Trend", memory.learning_trend)
-    st.caption(status)
-
-    st.markdown("## 🧠 What Kinara Remembers")
-    r1, r2, r3 = st.columns(3)
-    with r1:
-        st.write("**Weak concepts**")
-        st.write(", ".join(c.replace("_", " ") for c in memory.weak_concepts) or "None yet")
-    with r2:
-        st.write("**Strong concepts**")
-        st.write(", ".join(c.replace("_", " ") for c in memory.strong_concepts) or "None yet")
-    with r3:
-        st.write("**Recent topics**")
-        st.write(", ".join(memory.recent_topics) or "None yet")
-
-    st.markdown("## 🎯 Recommended Next")
-    default_topic = ""
-    default_difficulty = memory.recommended_difficulty
-    if memory.has_history and memory.recent_topics:
-        rec = adaptive_engine.build_next_experience(
-            updated_memory=memory, last_topic=memory.recent_topics[0], repeated_weak_concept=None
-        )
-        st.write(f"**Topic:** {rec.topic}")
-        st.write(f"**Difficulty:** {rec.difficulty}")
-        st.write(f"**Reason:** {rec.reason}")
-        default_topic = rec.topic
-        if st.button("Continue Learning"):
-            # Reuses this already-computed recommendation (rec.topic/
-            # rec.difficulty) directly — no second recommendation, no
-            # extra Gemini call for the decision itself (UI-002, AI_SPEC.md §0).
-            if launch_session(settings, fs, child_id, rec.topic, rec.difficulty):
-                st.rerun()
-    else:
-        st.write("No learning history yet — generate the first activity below.")
-
+    _memory_section(memory)
+    default_topic, default_difficulty = _recommended_next_section(settings, fs, child_id, memory)
+    _progress_section(memory)
     _generate_form(settings, fs, child_id, default_topic, default_difficulty)
-
     _exam_history_section(fs, child_id)
 
 
 def _exam_history_section(fs: FirestoreService, child_id: str) -> None:
     """HIST-001. Additive section — doesn't change anything above it."""
-    with st.expander("🗂️ Exam History", expanded=False):
+    with st.expander("Exam history", icon=":material/folder_open:", expanded=False):
         try:
             sessions = fs.list_session_history(child_id)
         except FirestoreUnavailableError as exc:
@@ -155,7 +191,7 @@ def _exam_history_section(fs: FirestoreService, child_id: str) -> None:
             return
 
         if not sessions:
-            st.write("No completed sessions yet.")
+            st.caption("No completed sessions yet.")
             return
 
         rows = exam_history.build_history_rows(sessions)
