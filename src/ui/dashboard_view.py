@@ -1,14 +1,7 @@
-"""Parent dashboard (UI_SPEC.md, FSD.md #3).
-
-BATCH 1 — frontend/UI/UX only. Every Firestore/adaptive-engine/
-gamification call below is unchanged from the previous implementation;
-only presentation (layout, wrapping containers, icons, copy casing) was
-touched. See src/ui/theme.py for the shared design system.
-"""
+"""Parent dashboard and exam history views."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
-
 import streamlit as st
 
 from src.config import Settings
@@ -44,13 +37,8 @@ def _generate_form(settings: Settings, fs: FirestoreService, child_id: str, defa
     with st.container(border=True):
         with st.form("generate_form"):
             topic = st.text_input("Topic", value=default_topic)
-            difficulty = st.selectbox(
-                "Difficulty (optional override)",
-                options=["(use recommended)"] + list(DIFFICULTY_ORDER),
-                index=(["(use recommended)"] + list(DIFFICULTY_ORDER)).index(default_difficulty)
-                if default_difficulty in DIFFICULTY_ORDER
-                else 0,
-            )
+            options = ["(use recommended)"] + list(DIFFICULTY_ORDER)
+            difficulty = st.selectbox("Difficulty (optional override)", options=options, index=options.index(default_difficulty) if default_difficulty in options else 0)
             submitted = st.form_submit_button("Generate", icon=":material/auto_awesome:")
         if submitted:
             if not topic.strip():
@@ -62,7 +50,7 @@ def _generate_form(settings: Settings, fs: FirestoreService, child_id: str, defa
 
 
 def _memory_section(memory) -> None:
-    theme.section_title("psychology", "What Kinara remembers")
+    theme.section_title("psychology", "What Zunara remembers")
     with st.container(border=True):
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -96,18 +84,13 @@ def _recommended_next_section(settings: Settings, fs: FirestoreService, child_id
     default_topic = ""
     default_difficulty = memory.recommended_difficulty
     if memory.has_history and memory.recent_topics:
-        rec = adaptive_engine.build_next_experience(
-            updated_memory=memory, last_topic=memory.recent_topics[0], repeated_weak_concept=None
-        )
+        rec = adaptive_engine.build_next_experience(updated_memory=memory, last_topic=memory.recent_topics[0], repeated_weak_concept=None)
         with st.container(key=theme.CTA_KEY, border=True):
-            theme.cta_eyebrow("bolt", "Kinara's pick for today")
+            theme.cta_eyebrow("bolt", "Zunara's pick for today")
             st.markdown(f"#### {rec.topic}")
             st.caption(f"Difficulty: {rec.difficulty}")
             st.write(rec.reason)
             if st.button("Continue Learning", type="primary", icon=":material/play_arrow:", width="stretch"):
-                # Reuses this already-computed recommendation (rec.topic/
-                # rec.difficulty) directly — no second recommendation, no
-                # extra Gemini call for the decision itself (UI-002, AI_SPEC.md §0).
                 if launch_session(settings, fs, child_id, rec.topic, rec.difficulty):
                     st.rerun()
         default_topic = rec.topic
@@ -121,10 +104,9 @@ def _progress_section(memory) -> None:
     theme.section_title("bar_chart", "Progress")
     level_number, level_name = gamification.compute_level(memory.total_xp)
     status = gamification.strike_status(memory.streak, memory.last_session_at, datetime.now(timezone.utc))
-
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("XP", memory.total_xp)
-    col2.metric("Kinara level", f"{level_number} — {level_name}")
+    col2.metric("Zunara level", f"{level_number} — {level_name}")
     col3.metric("Streak", memory.streak)
     avg_mastery = round(sum(memory.mastery_map.values()) / len(memory.mastery_map), 1) if memory.mastery_map else 0
     col4.metric("Mastery", f"{avg_mastery}%")
@@ -132,81 +114,79 @@ def _progress_section(memory) -> None:
     st.caption(status)
 
 
+def _history_table(fs: FirestoreService, child_id: str) -> None:
+    try:
+        sessions = fs.list_session_history(child_id)
+    except FirestoreUnavailableError as exc:
+        st.error(str(exc))
+        return
+    if not sessions:
+        st.caption("No completed sessions yet.")
+        return
+    rows = exam_history.build_history_rows(sessions)
+    st.dataframe([
+        {
+            "Date": row.completed_at.strftime("%Y-%m-%d %H:%M") if row.completed_at else "—",
+            "Topic": row.topic,
+            "Score": f"{row.score:.0f}%",
+            "Grade": f"{row.grade_letter} — {row.grade_label}",
+            "Trend": row.trend_label,
+            "XP earned": row.xp_earned,
+            "Status": row.status,
+        }
+        for row in rows
+    ], width="stretch")
+
+
 def render_dashboard(settings: Settings, db) -> None:
     fs = FirestoreService(db, st.session_state.uid)
-
     try:
         children = fs.list_children()
     except FirestoreUnavailableError as exc:
         st.error(str(exc))
         return
-
     _create_child_form(fs)
-
     if not children:
         with st.container(border=True):
-            st.markdown(
-                "##### :material/family_restroom: Create a child profile to get started",
-                text_alignment="center",
-            )
-            st.caption(
-                "Kinara adapts every learning session to your child's pace once a profile exists.",
-                text_alignment="center",
-            )
+            st.markdown("##### :material/family_restroom: Create a child profile to get started", text_alignment="center")
+            st.caption("Zunara adapts every learning session to your child's pace once a profile exists.", text_alignment="center")
         return
-
     names = {c.child_id: c.name for c in children}
     default_id = st.session_state.get("selected_child_id") or children[0].child_id
     if default_id not in names:
         default_id = children[0].child_id
-    child_id = st.selectbox(
-        "Child", options=list(names.keys()), format_func=lambda cid: names[cid],
-        index=list(names.keys()).index(default_id),
-    )
+    child_id = st.selectbox("Child", options=list(names.keys()), format_func=lambda cid: names[cid], index=list(names.keys()).index(default_id))
     st.session_state.selected_child_id = child_id
-
     try:
         child = fs.get_child(child_id)
         memory = fs.get_learning_memory(child_id)
     except FirestoreUnavailableError as exc:
         st.error(str(exc))
         return
-
-    theme.hero("Kinara AI · Parent view", f"How {child.name} is doing", child.educational_level)
-
+    theme.hero("Zunara AI · Parent view", f"How {child.name} is doing", child.educational_level)
     _memory_section(memory)
     default_topic, default_difficulty = _recommended_next_section(settings, fs, child_id, memory)
     _progress_section(memory)
     _generate_form(settings, fs, child_id, default_topic, default_difficulty)
-    _exam_history_section(fs, child_id)
 
 
-def _exam_history_section(fs: FirestoreService, child_id: str) -> None:
-    """HIST-001. Additive section — doesn't change anything above it."""
-    with st.expander("Exam history", icon=":material/folder_open:", expanded=False):
-        try:
-            sessions = fs.list_session_history(child_id)
-        except FirestoreUnavailableError as exc:
-            st.error(str(exc))
-            return
-
-        if not sessions:
-            st.caption("No completed sessions yet.")
-            return
-
-        rows = exam_history.build_history_rows(sessions)
-        st.dataframe(
-            [
-                {
-                    "Date": row.completed_at.strftime("%Y-%m-%d %H:%M") if row.completed_at else "—",
-                    "Topic": row.topic,
-                    "Score": f"{row.score:.0f}%",
-                    "Grade": f"{row.grade_letter} — {row.grade_label}",
-                    "Trend": row.trend_label,
-                    "XP earned": row.xp_earned,
-                    "Status": row.status,
-                }
-                for row in rows
-            ],
-            width="stretch",
-        )
+def render_history(db) -> None:
+    fs = FirestoreService(db, st.session_state.uid)
+    theme.hero("Zunara AI · History", "Learning history", "Review your child's completed learning sessions.")
+    try:
+        children = fs.list_children()
+    except FirestoreUnavailableError as exc:
+        st.error(str(exc))
+        return
+    if not children:
+        st.info("Create a child profile first to see learning history.")
+        return
+    names = {c.child_id: c.name for c in children}
+    default_id = st.session_state.get("selected_child_id") or children[0].child_id
+    if default_id not in names:
+        default_id = children[0].child_id
+    child_id = st.selectbox("Child", options=list(names.keys()), format_func=lambda cid: names[cid], index=list(names.keys()).index(default_id), key="history_child")
+    st.session_state.selected_child_id = child_id
+    theme.section_title("history", "Completed sessions")
+    with st.container(border=True):
+        _history_table(fs, child_id)
