@@ -104,13 +104,25 @@ def _progress_section(memory) -> None:
     theme.section_title("bar_chart", "Progress")
     level_number, level_name = gamification.compute_level(memory.total_xp)
     status = gamification.strike_status(memory.streak, memory.last_session_at, datetime.now(timezone.utc))
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("XP", memory.total_xp)
-    col2.metric("Zunara level", f"{level_number} — {level_name}")
-    col3.metric("Streak", memory.streak)
     avg_mastery = round(sum(memory.mastery_map.values()) / len(memory.mastery_map), 1) if memory.mastery_map else 0
-    col4.metric("Mastery", f"{avg_mastery}%")
-    col5.metric("Trend", memory.learning_trend)
+
+    metrics = [
+        ("XP", str(memory.total_xp)),
+        ("Zunara level", f"{level_number} — {level_name}"),
+        ("Streak", str(memory.streak)),
+        ("Mastery", f"{avg_mastery}%"),
+        ("Trend", memory.learning_trend),
+    ]
+
+    # Give the level card more horizontal room because its label/value are the
+    # longest. The remaining cards stay compact but readable.
+    cols = st.columns([0.9, 1.45, 0.9, 1.0, 1.0], gap="small")
+    for col, (label, value) in zip(cols, metrics):
+        with col:
+            st.markdown('<div class="zunara-progress-metric">', unsafe_allow_html=True)
+            st.caption(label)
+            st.markdown(f'<div class="zunara-progress-value">{value}</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
     st.caption(status)
 
 
