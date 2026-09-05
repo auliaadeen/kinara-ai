@@ -114,13 +114,17 @@ def _progress_section(memory) -> None:
         ("Trend", memory.learning_trend),
     ]
 
+    # Each metric is a real Streamlit bordered container. The previous
+    # implementation opened an HTML <div> with st.markdown and then emitted
+    # Streamlit widgets outside that DOM node, so the values rendered below
+    # the visual cards. Keeping the widgets inside st.container() makes the
+    # card boundary contain both label and value reliably.
     cols = st.columns([0.9, 1.55, 0.9, 1.0, 1.05], gap="small")
     for col, (label, value) in zip(cols, metrics):
         with col:
-            st.markdown('<div class="zunara-progress-metric">', unsafe_allow_html=True)
-            st.caption(label)
-            st.markdown(f'<div class="zunara-progress-value">{value}</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+            with st.container(border=True):
+                st.caption(label)
+                st.markdown(f"**{value}**")
     st.caption(status)
 
 
