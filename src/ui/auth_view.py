@@ -1,8 +1,4 @@
-"""Login / registration screen (FSD.md #2).
-
-BATCH 1 — frontend/UI/UX only. auth_service/Firestore calls and form
-field keys are unchanged — only presentation was touched.
-"""
+"""Login / registration screen."""
 from __future__ import annotations
 
 import streamlit as st
@@ -20,7 +16,6 @@ def _enter_app(settings: Settings, db, uid: str, email: str, id_token: str, role
     except FirestoreUnavailableError as exc:
         st.error(str(exc))
         return
-
     st.session_state.uid = uid
     st.session_state.email = email
     st.session_state.id_token = id_token
@@ -33,13 +28,11 @@ def render_auth(settings: Settings, db) -> None:
     _, center, _ = st.columns([1, 3, 1])
     with center:
         theme.hero(
-            "Kinara AI",
+            "Zunara AI",
             "Welcome back",
-            "Kinara remembers how your child learns and adapts every session to fit.",
+            "Zunara remembers how your child learns and adapts every session to fit.",
         )
-
         login_tab, register_tab = st.tabs(["Log in", "Register"])
-
         with login_tab:
             with st.container(border=True):
                 with st.form("login_form"):
@@ -54,16 +47,13 @@ def render_auth(settings: Settings, db) -> None:
                         st.error(str(exc))
                     else:
                         _enter_app(settings, db, uid, result.email, result.id_token, role=None)
-
         with register_tab:
             with st.container(border=True):
                 with st.form("register_form"):
                     email = st.text_input("Email", key="register_email")
                     password = st.text_input("Password", type="password", key="register_password")
                     role = st.selectbox("I am a...", options=["parent", "learner"], key="register_role")
-                    submitted = st.form_submit_button(
-                        "Create account", type="primary", icon=":material/person_add:", width="stretch"
-                    )
+                    submitted = st.form_submit_button("Create account", type="primary", icon=":material/person_add:", width="stretch")
                 if submitted:
                     try:
                         result = auth_service.register(settings, email, password)
