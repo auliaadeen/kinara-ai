@@ -1,7 +1,8 @@
 """Active learning session + results screen (UI_SPEC.md "Session").
 
-BATCH 1 — frontend/UI/UX only. Scoring, submission, and the
-Continue-Learning/Practice-Again control flow are unchanged.
+Shared parent/learner sessions use the parent UID as the data owner so
+answers, completion, XP, mastery, streak, and history all update the same
+child learning profile.
 """
 from __future__ import annotations
 
@@ -13,6 +14,11 @@ from src.services import gamification, session_service
 from src.services.firestore_service import FirestoreService, FirestoreUnavailableError
 from src.ui import theme
 from src.ui.session_launch import launch_session
+
+
+def _session_fs(db) -> FirestoreService:
+    owner_uid = st.session_state.get("session_owner_uid", st.session_state.uid)
+    return FirestoreService(db, owner_uid)
 
 
 def render_session(settings, db) -> None:
@@ -37,7 +43,7 @@ def render_session(settings, db) -> None:
 
     if submitted:
         time_spent = int((datetime.now(timezone.utc) - session.started_at).total_seconds())
-        fs = FirestoreService(db, st.session_state.uid)
+        fs = _session_fs(db)
         try:
             result = session_service.submit_learning_session(
                 fs, st.session_state.selected_child_id, session, answers, time_spent
@@ -95,7 +101,7 @@ def render_results(settings, db) -> None:
         st.markdown(f"#### {result.next_experience.topic}")
         st.caption(f"Difficulty: {result.next_experience.difficulty}")
         if st.button("Continue Learning", type="primary", icon=":material/play_arrow:", width="stretch"):
-            fs = FirestoreService(db, st.session_state.uid)
+            fs = _session_fs(db)
             rec = result.next_experience
             if launch_session(settings, fs, st.session_state.selected_child_id, rec.topic, rec.difficulty):
                 st.session_state.pop("last_submit_result", None)
