@@ -82,7 +82,7 @@ def build_next_experience(
         objective = f"Build mastery in {repeated_weak_concept.replace('_', ' ')}"
         reason = (
             f"{repeated_weak_concept.replace('_', ' ').capitalize()} was missed again after "
-            "already being a weak concept, so Kinara is prioritizing it before moving on."
+            "already being a weak concept, so Zunara is prioritizing it before moving on."
         )
     elif updated_memory.weak_concepts:
         weakest = updated_memory.weak_concepts[0]
@@ -90,14 +90,14 @@ def build_next_experience(
         objective = f"Strengthen {weakest.replace('_', ' ')}"
         reason = (
             f"Recent sessions show {updated_memory.learning_trend} performance, and "
-            f"{weakest.replace('_', ' ')} remains a weak concept, so Kinara kept the focus there."
+            f"{weakest.replace('_', ' ')} remains a weak concept, so Zunara kept the focus there."
         )
     else:
         topic = last_topic
         objective = f"Progress further in {last_topic}"
         reason = (
             f"Performance has been {updated_memory.learning_trend} with no outstanding weak "
-            f"concepts, so Kinara is increasing the challenge to {difficulty}."
+            f"concepts, so Zunara is increasing the challenge to {difficulty}."
         )
 
     return NextExperience(topic=topic, difficulty=difficulty, objective=objective, reason=reason)
