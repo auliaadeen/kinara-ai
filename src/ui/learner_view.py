@@ -51,6 +51,7 @@ def render_learner_dashboard(settings, db) -> None:
     try:
         memory = parent_fs.get_learning_memory(child.child_id)
         active_session = parent_fs.get_active_session(child.child_id)
+        history = parent_fs.list_session_history(child.child_id)
     except FirestoreUnavailableError as exc:
         st.error(str(exc))
         return
@@ -67,11 +68,25 @@ def render_learner_dashboard(settings, db) -> None:
             if st.button("Start Learning", type="primary", icon=":material/play_arrow:", width="stretch"):
                 st.session_state.selected_child_id = child.child_id
                 st.session_state.current_session = active_session
+                st.session_state.session_owner_uid = parent_fs._uid
                 st.session_state.view = "session"
                 st.rerun()
+    elif history:
+        theme.section_title("replay", "Keep learning")
+        with st.container(key=theme.CTA_KEY, border=True):
+            theme.cta_eyebrow("auto_awesome", "Practice again")
+            topic = memory.recent_topics[0] if memory.recent_topics else history[0].topic
+            difficulty = memory.recommended_difficulty
+            st.markdown(f"#### Practice: {topic}")
+            st.caption(f"Difficulty: {difficulty}")
+            st.write("Review what you have learned and build your mastery further.")
+            if st.button("Learning Again", type="primary", icon=":material/replay:", width="stretch"):
+                st.session_state.selected_child_id = child.child_id
+                if launch_session(settings, parent_fs, child.child_id, topic, difficulty):
+                    st.rerun()
     else:
-        theme.section_title("check_circle", "All caught up")
-        st.caption("No pending activity right now. Ask your parent to set a new learning activity.")
+        theme.section_title("check_circle", "Ready when you are")
+        st.caption("No learning activity yet. Ask your parent to set your first activity.")
 
     _progress_section(memory)
 
