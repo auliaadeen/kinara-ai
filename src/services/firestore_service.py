@@ -149,7 +149,13 @@ class FirestoreService:
         except Exception as exc:
             logger.exception("Could not load sessions: %s", exc)
             raise FirestoreUnavailableError(error_message) from exc
-        return [s for s in sessions if s.completed][:limit]
+        # History means a genuinely completed session. Ignore stale/incomplete
+        # documents that may exist from earlier MVP testing, otherwise the UI
+        # can show rows whose score/date are None.
+        return [
+            s for s in sessions
+            if s.completed and s.score is not None and s.completed_at is not None
+        ][:limit]
 
     def list_recent_sessions(self, child_id: str, limit: int = 3) -> list[LearningSession]:
         return self._fetch_completed_sessions(child_id, limit, "Could not load recent sessions.")
