@@ -1,34 +1,39 @@
-"""Learner workspace.
-
-Learners do not manage child profiles. A learner sees the child profile that
-is explicitly linked to their account by a parent.
-"""
+"""Learner dashboard and history views."""
 from __future__ import annotations
 
 import streamlit as st
 
-from src.config import Settings
 from src.services import exam_history, gamification
 from src.services.firestore_service import FirestoreService, FirestoreUnavailableError
 from src.ui import theme
+from src.ui.session_launch import launch_session
 
 
 def _get_linked_child(fs: FirestoreService):
-    """Resolve the learner's linked child from the verified parent account."""
     user = fs.get_user()
     if not user or user.role != "learner" or not user.linked_parent_uid or not user.linked_child_id:
         return None, None
-
-    # Child/session data remains owned by the parent account in the current MVP
-    # schema. Only the parent UID stored on the learner's verified user record
-    # is used; the learner cannot supply an arbitrary UID.
     parent_fs = FirestoreService(fs._db, user.linked_parent_uid)
     child = parent_fs.get_child(user.linked_child_id)
     return parent_fs, child
 
 
-def render_learner_dashboard(settings: Settings, db) -> None:
-    """Render the learner-facing workspace without parent-only controls."""
+def _progress_section(memory) -> None:
+    theme.section_title("bar_chart", "My progress")
+    level_number, level_name = gamification.compute_level(memory.total_xp)
+    avg_mastery = round(sum(memory.mastery_map.values()) / len(memory.mastery_map), 1) if memory.mastery_map else 0
+    cols = st.columns(4, gap="small")
+    metrics = [("XP", memory.total_xp), ("Level", f"{level_number} — {level_name}"), ("Streak", memory.streak), ("Mastery", f"{avg_mastery}%")]
+    for col, (label, value) in zip(cols, metrics):
+        with col:
+            st.markdown('<div class="zunara-progress-metric">', unsafe_allow_html=True)
+            st.caption(label)
+            st.markdown(f'<div class="zunara-progress-value">{value}</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+    st.caption(f"Learning trend: {memory.learning_trend}")
+
+
+def render_learner_dashboard(settings, db) -> None:
     fs = FirestoreService(db, st.session_state.uid)
     try:
         parent_fs, child = _get_linked_child(fs)
@@ -36,97 +41,75 @@ def render_learner_dashboard(settings: Settings, db) -> None:
         st.error(str(exc))
         return
 
-    if not child or not parent_fs:
-        theme.hero(
-            "Zunara AI · Learner view",
-            "Your learning journey",
-            "Zunara adapts each activity to your progress and learning pace.",
-        )
+    if not parent_fs or not child:
+        theme.hero("Zunara AI · Learner view", "Your learning space", "Connect your learner account to a parent profile to begin.")
         with st.container(border=True):
-            st.markdown("##### :material/link: Your learning profile is not linked yet", text_alignment="center")
-            st.caption(
-                "Ask your parent or teacher to connect your Zunara account to your learner profile.",
-                text_alignment="center",
-            )
+            st.write("Your learning profile is not linked yet.")
+            st.caption("Open Settings → Parent Connection and enter the one-time code from your parent.")
         return
 
     try:
         memory = parent_fs.get_learning_memory(child.child_id)
+        active_session = parent_fs.get_active_session(child.child_id)
     except FirestoreUnavailableError as exc:
         st.error(str(exc))
         return
 
     theme.hero("Zunara AI · Learner view", f"Hi, {child.name}!", child.educational_level)
 
-    theme.section_title("auto_awesome", "Recommended next")
-    with st.container(border=True):
-        if memory.recent_topics:
-            topic = memory.recent_topics[0]
-            st.markdown(f"#### {topic}")
-            st.caption(f"Difficulty: {memory.recommended_difficulty}")
-            st.write("Continue with an activity adapted to your saved learning progress.")
-        else:
-            st.write("Your first learning activity will appear here once your profile is ready.")
+    if active_session:
+        theme.section_title("play_circle", "Ready to learn")
+        with st.container(key=theme.CTA_KEY, border=True):
+            theme.cta_eyebrow("bolt", "Activity from your parent")
+            st.markdown(f"#### {active_session.title}")
+            st.caption(f"{len(active_session.questions)} questions · Difficulty: {active_session.difficulty}")
+            st.write(active_session.objective)
+            if st.button("Start Learning", type="primary", icon=":material/play_arrow:", width="stretch"):
+                st.session_state.selected_child_id = child.child_id
+                st.session_state.current_session = active_session
+                st.session_state.view = "session"
+                st.rerun()
+    else:
+        theme.section_title("check_circle", "All caught up")
+        st.caption("No pending activity right now. Ask your parent to set a new learning activity.")
 
-    theme.section_title("bar_chart", "My progress")
-    with st.container(border=True):
-        level_number, level_name = gamification.compute_level(memory.total_xp)
-        mastery = round(sum(memory.mastery_map.values()) / len(memory.mastery_map), 1) if memory.mastery_map else 0
-        cols = st.columns(4, gap="small")
-        cols[0].metric("XP", memory.total_xp)
-        cols[1].metric("Level", f"{level_number} — {level_name}")
-        cols[2].metric("Streak", memory.streak)
-        cols[3].metric("Mastery", f"{mastery}%")
+    _progress_section(memory)
 
     if memory.recent_topics:
-        theme.section_title("psychology", "What Zunara remembers")
+        theme.section_title("auto_awesome", "What Zunara is working on")
         with st.container(border=True):
-            st.caption(f"Learning trend: {memory.learning_trend}")
-            if memory.weak_concepts:
-                st.write("**Needs practice:** " + ", ".join(c.replace("_", " ") for c in memory.weak_concepts))
-            if memory.strong_concepts:
-                st.write("**Doing well:** " + ", ".join(c.replace("_", " ") for c in memory.strong_concepts))
+            st.write(", ".join(memory.recent_topics[:3]))
 
 
 def render_learner_history(db) -> None:
-    """Render history for the learner's linked child profile."""
     fs = FirestoreService(db, st.session_state.uid)
     try:
         parent_fs, child = _get_linked_child(fs)
     except FirestoreUnavailableError as exc:
         st.error(str(exc))
         return
-
-    theme.hero("Zunara AI · History", "My learning history", "Review your completed learning sessions.")
-    if not child or not parent_fs:
-        st.info("Your learner profile is not linked yet.")
+    theme.hero("Zunara AI · History", "My learning history", "Your completed learning sessions are shared with your parent.")
+    if not parent_fs or not child:
+        st.info("Connect your learner account to a parent profile first.")
         return
-
     try:
         sessions = parent_fs.list_session_history(child.child_id)
     except FirestoreUnavailableError as exc:
         st.error(str(exc))
         return
-
     if not sessions:
         st.caption("No completed sessions yet.")
         return
-
     rows = exam_history.build_history_rows(sessions)
-    theme.section_title("history", "Completed sessions")
-    with st.container(border=True):
-        st.dataframe(
-            [
-                {
-                    "Date": row.completed_at.strftime("%Y-%m-%d %H:%M") if row.completed_at else "—",
-                    "Topic": row.topic,
-                    "Score": f"{row.score:.0f}%",
-                    "Grade": f"{row.grade_letter} — {row.grade_label}",
-                    "Trend": row.trend_label,
-                    "XP earned": row.xp_earned,
-                    "Status": row.status,
-                }
-                for row in rows
-            ],
-            width="stretch",
-        )
+    st.dataframe([
+        {
+            "Date": row.completed_at.strftime("%Y-%m-%d %H:%M") if row.completed_at else "—",
+            "Topic": row.topic,
+            "Score": f"{row.score:.0f}%",
+            "Grade": f"{row.grade_letter} — {row.grade_label}",
+            "Trend": row.trend_label,
+            "XP earned": row.xp_earned,
+            "Status": row.status,
+        }
+        for row in rows
+    ], width="stretch")
