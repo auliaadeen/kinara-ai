@@ -28,50 +28,37 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius:12px !important
 .st-key-{CTA_KEY} {{ border-radius:16px !important; padding:1.1rem 1.35rem !important; background:linear-gradient(135deg,{ACCENT_SOFT},{PRIMARY_SOFT}) !important; border:1.5px solid {ACCENT_BORDER} !important; margin-bottom:0.5rem; }}
 .zunara-cta-eyebrow {{ display:inline-flex; align-items:center; gap:0.35rem; text-transform:uppercase; letter-spacing:0.06em; font-size:0.72rem; font-weight:700; color:{ACCENT}; margin-bottom:0.3rem; }}
 .zunara-avatar {{ display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%; background:{PRIMARY}; color:white; font-weight:700; font-size:0.85rem; flex:none; }}
+.zunara-progress-metric {{ min-height:72px; padding:0.65rem 0.7rem; border:1px solid rgba(16,24,40,0.06); border-radius:12px; background:#FFFFFF; overflow:hidden; }}
+.zunara-progress-metric .zunara-progress-value {{ font-size:clamp(0.95rem, 2.4vw, 1.25rem); font-weight:700; line-height:1.2; overflow-wrap:anywhere; word-break:break-word; }}
 </style>
 """
-
 
 def inject() -> None:
     st.html(_CSS)
 
-
 def _initial(email: str | None) -> str:
     return _html.escape((email or "?").strip()[:1].upper() or "?")
 
-
 def render_identity_sidebar(email: str | None, active_view: str, on_logout, role: str = "parent") -> None:
-    """Render persistent navigation appropriate to the signed-in role."""
     with st.sidebar:
         st.markdown(f"### :material/psychology: {BRAND_NAME}")
         st.caption("Learner workspace" if role == "learner" else "Parent workspace")
-
-        if role == "learner":
-            steps = [
-                ("dashboard", "My Learning", ":material/school:"),
-                ("history", "History", ":material/history:"),
-            ]
-        else:
-            steps = [
-                ("dashboard", "Dashboard", ":material/dashboard:"),
-                ("history", "History", ":material/history:"),
-            ]
-
+        steps = [
+            ("dashboard", "My Learning" if role == "learner" else "Dashboard", ":material/school:" if role == "learner" else ":material/dashboard:"),
+            ("history", "History", ":material/history:"),
+            ("settings", "Settings", ":material/settings:"),
+        ]
         for key, label, icon in steps:
             if st.button(label, icon=icon, width="stretch", type="primary" if active_view == key else "secondary", key=f"nav_{role}_{key}"):
                 st.session_state.view = key
                 st.rerun()
-
         if active_view in {"session", "results"}:
             st.caption(f"Current: {active_view.title()}")
-
         with st.container(horizontal=True, vertical_alignment="center"):
             st.markdown(f'<span class="zunara-avatar">{_initial(email)}</span>', unsafe_allow_html=True)
             st.caption(email or "")
-
         if st.button("Log out", icon=":material/logout:", width="stretch"):
             on_logout()
-
 
 def hero(eyebrow: str, title: str, subtitle: str | None = None) -> None:
     parts = [f'<div class="zunara-hero"><div class="zunara-hero-eyebrow">{_html.escape(eyebrow)}</div>']
@@ -81,10 +68,8 @@ def hero(eyebrow: str, title: str, subtitle: str | None = None) -> None:
     parts.append("</div>")
     st.markdown("".join(parts), unsafe_allow_html=True)
 
-
 def cta_eyebrow(icon: str, text: str) -> None:
     st.markdown(f'<div class="zunara-cta-eyebrow">:material/{icon}: {_html.escape(text)}</div>', unsafe_allow_html=True)
-
 
 def section_title(icon: str, title: str) -> None:
     st.markdown(f"### :material/{icon}: {title}")
