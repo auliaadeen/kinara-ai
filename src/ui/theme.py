@@ -5,7 +5,7 @@ import html as _html
 import streamlit as st
 
 BRAND_NAME = "Zunara AI"
-BRAND_TAGLINE = "Your child's adaptive learning companion"
+BRAND_TAGLINE = "Your adaptive learning companion"
 ACCENT = "#D97706"
 ACCENT_SOFT = "rgba(217, 119, 6, 0.08)"
 ACCENT_BORDER = "rgba(217, 119, 6, 0.28)"
@@ -13,12 +13,7 @@ PRIMARY = "#0F766E"
 PRIMARY_SOFT = "rgba(15, 118, 110, 0.08)"
 PRIMARY_BORDER = "rgba(15, 118, 110, 0.16)"
 PRIMARY_TINT = "#EBF6F4"
-CTA_KEY = "kinara-next-cta"
-
-_STEPS = [
-    ("dashboard", "Dashboard", ":material/dashboard:"),
-    ("history", "History", ":material/history:"),
-]
+CTA_KEY = "zunara-next-cta"
 
 _CSS = f"""
 <style>
@@ -28,11 +23,11 @@ _CSS = f"""
 }}
 div[data-testid="stMetric"] {{ background:#FFFFFF; border:1px solid rgba(16,24,40,0.06); border-radius:12px; padding:0.95rem 1.1rem; box-shadow:0 1px 2px rgba(16,24,40,0.05),0 1px 3px rgba(16,24,40,0.1); }}
 div[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius:12px !important; box-shadow:0 1px 2px rgba(16,24,40,0.04),0 8px 20px -12px rgba(16,24,40,0.18); }}
-.kinara-hero {{ padding:1.5rem 1.65rem; border-radius:16px; background:linear-gradient(135deg,{PRIMARY_SOFT},rgba(217,119,6,0.05)); border:1px solid {PRIMARY_BORDER}; margin-bottom:0.75rem; }}
-.kinara-hero-eyebrow {{ text-transform:uppercase; letter-spacing:0.06em; font-size:0.72rem; font-weight:700; color:{PRIMARY}; margin-bottom:0.15rem; }}
+.zunara-hero {{ padding:1.5rem 1.65rem; border-radius:16px; background:linear-gradient(135deg,{PRIMARY_SOFT},rgba(217,119,0,0.05)); border:1px solid {PRIMARY_BORDER}; margin-bottom:0.75rem; }}
+.zunara-hero-eyebrow {{ text-transform:uppercase; letter-spacing:0.06em; font-size:0.72rem; font-weight:700; color:{PRIMARY}; margin-bottom:0.15rem; }}
 .st-key-{CTA_KEY} {{ border-radius:16px !important; padding:1.1rem 1.35rem !important; background:linear-gradient(135deg,{ACCENT_SOFT},{PRIMARY_SOFT}) !important; border:1.5px solid {ACCENT_BORDER} !important; margin-bottom:0.5rem; }}
-.kinara-cta-eyebrow {{ display:inline-flex; align-items:center; gap:0.35rem; text-transform:uppercase; letter-spacing:0.06em; font-size:0.72rem; font-weight:700; color:{ACCENT}; margin-bottom:0.3rem; }}
-.kinara-avatar {{ display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%; background:{PRIMARY}; color:white; font-weight:700; font-size:0.85rem; flex:none; }}
+.zunara-cta-eyebrow {{ display:inline-flex; align-items:center; gap:0.35rem; text-transform:uppercase; letter-spacing:0.06em; font-size:0.72rem; font-weight:700; color:{ACCENT}; margin-bottom:0.3rem; }}
+.zunara-avatar {{ display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%; background:{PRIMARY}; color:white; font-weight:700; font-size:0.85rem; flex:none; }}
 </style>
 """
 
@@ -45,14 +40,25 @@ def _initial(email: str | None) -> str:
     return _html.escape((email or "?").strip()[:1].upper() or "?")
 
 
-def render_identity_sidebar(email: str | None, active_view: str, on_logout) -> None:
-    """Render persistent, clickable app navigation."""
+def render_identity_sidebar(email: str | None, active_view: str, on_logout, role: str = "parent") -> None:
+    """Render persistent navigation appropriate to the signed-in role."""
     with st.sidebar:
         st.markdown(f"### :material/psychology: {BRAND_NAME}")
-        st.caption(BRAND_TAGLINE)
+        st.caption("Learner workspace" if role == "learner" else "Parent workspace")
 
-        for key, label, icon in _STEPS:
-            if st.button(label, icon=icon, width="stretch", type="primary" if active_view == key else "secondary", key=f"nav_{key}"):
+        if role == "learner":
+            steps = [
+                ("dashboard", "My Learning", ":material/school:"),
+                ("history", "History", ":material/history:"),
+            ]
+        else:
+            steps = [
+                ("dashboard", "Dashboard", ":material/dashboard:"),
+                ("history", "History", ":material/history:"),
+            ]
+
+        for key, label, icon in steps:
+            if st.button(label, icon=icon, width="stretch", type="primary" if active_view == key else "secondary", key=f"nav_{role}_{key}"):
                 st.session_state.view = key
                 st.rerun()
 
@@ -60,7 +66,7 @@ def render_identity_sidebar(email: str | None, active_view: str, on_logout) -> N
             st.caption(f"Current: {active_view.title()}")
 
         with st.container(horizontal=True, vertical_alignment="center"):
-            st.markdown(f'<span class="kinara-avatar">{_initial(email)}</span>', unsafe_allow_html=True)
+            st.markdown(f'<span class="zunara-avatar">{_initial(email)}</span>', unsafe_allow_html=True)
             st.caption(email or "")
 
         if st.button("Log out", icon=":material/logout:", width="stretch"):
@@ -68,7 +74,7 @@ def render_identity_sidebar(email: str | None, active_view: str, on_logout) -> N
 
 
 def hero(eyebrow: str, title: str, subtitle: str | None = None) -> None:
-    parts = [f'<div class="kinara-hero"><div class="kinara-hero-eyebrow">{_html.escape(eyebrow)}</div>']
+    parts = [f'<div class="zunara-hero"><div class="zunara-hero-eyebrow">{_html.escape(eyebrow)}</div>']
     parts.append(f"<h2 style='margin:0'>{_html.escape(title)}</h2>")
     if subtitle:
         parts.append(f"<p style='margin:0.3rem 0 0 0; opacity:0.8'>{_html.escape(subtitle)}</p>")
@@ -77,7 +83,7 @@ def hero(eyebrow: str, title: str, subtitle: str | None = None) -> None:
 
 
 def cta_eyebrow(icon: str, text: str) -> None:
-    st.markdown(f'<div class="kinara-cta-eyebrow">:material/{icon}: {_html.escape(text)}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="zunara-cta-eyebrow">:material/{icon}: {_html.escape(text)}</div>', unsafe_allow_html=True)
 
 
 def section_title(icon: str, title: str) -> None:
