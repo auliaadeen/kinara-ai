@@ -25,9 +25,12 @@ def launch_session(
     topic: str,
     difficulty: Difficulty | None,
 ) -> bool:
-    """Generates the next session and, on success, points session_state at
-    it. Returns True on success (caller should st.rerun()); False on
-    failure (error already shown via st.error, view unchanged)."""
+    """Generate a session and bind the active session to its data owner.
+
+    For a linked learner, ``fs`` is intentionally the parent-scoped service,
+    so generated sessions and all subsequent progress use the shared
+    parent/child learning profile as the single source of truth.
+    """
     with st.spinner("Zunara is preparing the activity..."):
         try:
             session = session_service.generate_learning_experience(
@@ -44,5 +47,6 @@ def launch_session(
             return False
 
     st.session_state.current_session = session
+    st.session_state.session_owner_uid = fs._uid
     st.session_state.view = "session"
     return True
