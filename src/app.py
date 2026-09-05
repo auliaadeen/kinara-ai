@@ -17,10 +17,11 @@ from src.ui.auth_view import render_auth
 from src.ui.dashboard_view import render_dashboard, render_history
 from src.ui.learner_view import render_learner_dashboard, render_learner_history
 from src.ui.session_view import render_results, render_session
+from src.ui.settings_view import render_settings
 
 st.set_page_config(page_title="Zunara AI", page_icon=":material/psychology:", layout="centered")
 
-_SESSION_KEYS = ["uid", "email", "id_token", "role", "view", "selected_child_id", "current_session", "last_submit_result"]
+_SESSION_KEYS = ["uid", "email", "id_token", "role", "view", "selected_child_id", "current_session", "last_submit_result", "generated_link_code"]
 
 
 def _logout() -> None:
@@ -35,17 +36,11 @@ def main() -> None:
     except ConfigError as exc:
         st.error(f"Configuration error: {exc}")
         st.stop()
-        return
-
     try:
         db = get_firestore_client(settings)
     except Exception as exc:
-        st.error(
-            "Could not connect to Firebase. Check FIREBASE_PROJECT_ID and that Application "
-            f"Default Credentials are available. ({exc})"
-        )
+        st.error("Could not connect to Firebase. Check FIREBASE_PROJECT_ID and that Application Default Credentials are available. " + f"({exc})")
         st.stop()
-        return
 
     if "uid" not in st.session_state:
         theme.inject()
@@ -62,10 +57,9 @@ def main() -> None:
     elif view == "results" and "last_submit_result" in st.session_state:
         render_results(settings, db)
     elif view == "history":
-        if role == "learner":
-            render_learner_history(db)
-        else:
-            render_history(db)
+        render_learner_history(db) if role == "learner" else render_history(db)
+    elif view == "settings":
+        render_settings(db)
     elif role == "learner":
         render_learner_dashboard(settings, db)
     else:
