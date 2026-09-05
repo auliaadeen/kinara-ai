@@ -22,14 +22,20 @@ def _progress_section(memory) -> None:
     theme.section_title("bar_chart", "My progress")
     level_number, level_name = gamification.compute_level(memory.total_xp)
     avg_mastery = round(sum(memory.mastery_map.values()) / len(memory.mastery_map), 1) if memory.mastery_map else 0
+    metrics = [
+        ("XP", str(memory.total_xp)),
+        ("Level", f"{level_number} — {level_name}"),
+        ("Streak", str(memory.streak)),
+        ("Mastery", f"{avg_mastery}%"),
+    ]
     cols = st.columns(4, gap="small")
-    metrics = [("XP", memory.total_xp), ("Level", f"{level_number} — {level_name}"), ("Streak", memory.streak), ("Mastery", f"{avg_mastery}%")]
     for col, (label, value) in zip(cols, metrics):
         with col:
-            st.markdown('<div class="zunara-progress-metric">', unsafe_allow_html=True)
-            st.caption(label)
-            st.markdown(f'<div class="zunara-progress-value">{value}</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="zunara-progress-metric"><div class="zunara-progress-label">{label}</div>'
+                f'<div class="zunara-progress-value">{value}</div></div>',
+                unsafe_allow_html=True,
+            )
     st.caption(f"Learning trend: {memory.learning_trend}")
 
 
@@ -124,7 +130,6 @@ def render_learner_history(db) -> None:
             "Grade": f"{row.grade_letter} — {row.grade_label}",
             "Trend": row.trend_label,
             "XP earned": row.xp_earned,
-            "Status": row.status,
         }
         for row in rows
-    ], width="stretch")
+    ], width="stretch", hide_index=True)
