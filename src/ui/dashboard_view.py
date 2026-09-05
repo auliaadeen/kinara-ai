@@ -114,9 +114,7 @@ def _progress_section(memory) -> None:
         ("Trend", memory.learning_trend),
     ]
 
-    # Give the level card more horizontal room because its label/value are the
-    # longest. The remaining cards stay compact but readable.
-    cols = st.columns([0.9, 1.45, 0.9, 1.0, 1.0], gap="small")
+    cols = st.columns([0.9, 1.55, 0.9, 1.0, 1.05], gap="small")
     for col, (label, value) in zip(cols, metrics):
         with col:
             st.markdown('<div class="zunara-progress-metric">', unsafe_allow_html=True)
