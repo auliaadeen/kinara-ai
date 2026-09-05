@@ -114,17 +114,13 @@ def _progress_section(memory) -> None:
         ("Trend", memory.learning_trend),
     ]
 
-    # Each metric is a real Streamlit bordered container. The previous
-    # implementation opened an HTML <div> with st.markdown and then emitted
-    # Streamlit widgets outside that DOM node, so the values rendered below
-    # the visual cards. Keeping the widgets inside st.container() makes the
-    # card boundary contain both label and value reliably.
+    # Use Streamlit's native metric widget. Unlike a hand-written HTML div,
+    # the metric value is part of the same rendered card and cannot fall
+    # outside the border because of Streamlit's widget DOM structure.
     cols = st.columns([0.9, 1.55, 0.9, 1.0, 1.05], gap="small")
     for col, (label, value) in zip(cols, metrics):
         with col:
-            with st.container(border=True):
-                st.caption(label)
-                st.markdown(f"**{value}**")
+            st.metric(label, value)
     st.caption(status)
 
 
