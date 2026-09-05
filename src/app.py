@@ -15,7 +15,7 @@ from src.services.firebase_bootstrap import get_firestore_client
 from src.ui import theme
 from src.ui.auth_view import render_auth
 from src.ui.dashboard_view import render_dashboard, render_history
-from src.ui.learner_view import render_learner_dashboard
+from src.ui.learner_view import render_learner_dashboard, render_learner_history
 from src.ui.session_view import render_results, render_session
 
 st.set_page_config(page_title="Zunara AI", page_icon=":material/psychology:", layout="centered")
@@ -62,7 +62,10 @@ def main() -> None:
     elif view == "results" and "last_submit_result" in st.session_state:
         render_results(settings, db)
     elif view == "history":
-        render_history(db) if role != "learner" else render_learner_dashboard(settings, db)
+        if role == "learner":
+            render_learner_history(db)
+        else:
+            render_history(db)
     elif role == "learner":
         render_learner_dashboard(settings, db)
     else:
