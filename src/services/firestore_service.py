@@ -122,6 +122,19 @@ class FirestoreService:
             logger.exception("Could not load session: %s", exc)
             raise FirestoreUnavailableError("Could not load the learning session.") from exc
 
+    def get_active_session(self, child_id: str) -> LearningSession | None:
+        """Return the newest generated-but-not-completed session for a child."""
+        try:
+            docs = self._child_ref(child_id).collection("sessions").stream()
+            sessions = [LearningSession.from_firestore(d.to_dict()) for d in docs]
+            active = [s for s in sessions if not s.completed]
+            if not active:
+                return None
+            return max(active, key=lambda s: s.started_at)
+        except Exception as exc:
+            logger.exception("Could not load active session: %s", exc)
+            raise FirestoreUnavailableError("Could not load the current learning activity.") from exc
+
     def complete_session(self, child_id: str, session: LearningSession) -> None:
         try:
             self._session_ref(child_id, session.session_id).set(session.to_firestore())
@@ -200,10 +213,7 @@ class FirestoreService:
             if not child_snap.exists:
                 raise ValueError("The child profile no longer exists.")
 
-            self._user_ref().update({
-                "linkedParentUid": parent.uid,
-                "linkedChildId": child_id,
-            })
+            self._user_ref().update({"linkedParentUid": parent.uid, "linkedChildId": child_id})
             parent_ref.update({
                 "linkedLearnerUid": self._uid,
                 "linkedLearnerEmail": current.email,
