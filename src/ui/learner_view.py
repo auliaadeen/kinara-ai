@@ -1,8 +1,7 @@
 """Learner workspace.
 
-Learners do not manage child profiles. A learner must be linked to a child
-profile before learning data can be shown; the linking workflow is intentionally
-kept separate so learner access cannot accidentally expose another user's data.
+Learners do not manage child profiles. A learner sees the child profile that
+is explicitly linked to their account by a parent.
 """
 from __future__ import annotations
 
@@ -14,27 +13,30 @@ from src.services.firestore_service import FirestoreService, FirestoreUnavailabl
 from src.ui import theme
 
 
-def _get_learner_child(fs: FirestoreService):
-    """Return the learner's existing child profile, if one exists.
+def _get_linked_child(fs: FirestoreService):
+    """Resolve the learner's linked child from the verified parent account."""
+    user = fs.get_user()
+    if not user or user.role != "learner" or not user.linked_parent_uid or not user.linked_child_id:
+        return None, None
 
-    The current MVP data model stores child profiles under the signed-in user.
-    This is intentionally read-only here until Parent → Learner linking is
-    implemented as an explicit, secure workflow.
-    """
-    children = fs.list_children()
-    return children[0] if children else None
+    # Child/session data remains owned by the parent account in the current MVP
+    # schema. Only the parent UID stored on the learner's verified user record
+    # is used; the learner cannot supply an arbitrary UID.
+    parent_fs = FirestoreService(fs._db, user.linked_parent_uid)
+    child = parent_fs.get_child(user.linked_child_id)
+    return parent_fs, child
 
 
 def render_learner_dashboard(settings: Settings, db) -> None:
     """Render the learner-facing workspace without parent-only controls."""
     fs = FirestoreService(db, st.session_state.uid)
     try:
-        child = _get_learner_child(fs)
+        parent_fs, child = _get_linked_child(fs)
     except FirestoreUnavailableError as exc:
         st.error(str(exc))
         return
 
-    if not child:
+    if not child or not parent_fs:
         theme.hero(
             "Zunara AI · Learner view",
             "Your learning journey",
@@ -49,7 +51,7 @@ def render_learner_dashboard(settings: Settings, db) -> None:
         return
 
     try:
-        memory = fs.get_learning_memory(child.child_id)
+        memory = parent_fs.get_learning_memory(child.child_id)
     except FirestoreUnavailableError as exc:
         st.error(str(exc))
         return
@@ -64,7 +66,6 @@ def render_learner_dashboard(settings: Settings, db) -> None:
             st.caption(f"Difficulty: {memory.recommended_difficulty}")
             st.write("Continue with an activity adapted to your saved learning progress.")
         else:
-            topic = ""
             st.write("Your first learning activity will appear here once your profile is ready.")
 
     theme.section_title("bar_chart", "My progress")
@@ -88,21 +89,21 @@ def render_learner_dashboard(settings: Settings, db) -> None:
 
 
 def render_learner_history(db) -> None:
-    """Render history scoped to the learner's own existing child profile."""
+    """Render history for the learner's linked child profile."""
     fs = FirestoreService(db, st.session_state.uid)
     try:
-        child = _get_learner_child(fs)
+        parent_fs, child = _get_linked_child(fs)
     except FirestoreUnavailableError as exc:
         st.error(str(exc))
         return
 
     theme.hero("Zunara AI · History", "My learning history", "Review your completed learning sessions.")
-    if not child:
+    if not child or not parent_fs:
         st.info("Your learner profile is not linked yet.")
         return
 
     try:
-        sessions = fs.list_session_history(child.child_id)
+        sessions = parent_fs.list_session_history(child.child_id)
     except FirestoreUnavailableError as exc:
         st.error(str(exc))
         return
