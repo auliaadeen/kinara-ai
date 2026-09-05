@@ -28,7 +28,7 @@ def launch_session(
     """Generates the next session and, on success, points session_state at
     it. Returns True on success (caller should st.rerun()); False on
     failure (error already shown via st.error, view unchanged)."""
-    with st.spinner("Kinara is preparing the activity..."):
+    with st.spinner("Zunara is preparing the activity..."):
         try:
             session = session_service.generate_learning_experience(
                 settings, fs, child_id, topic, difficulty
